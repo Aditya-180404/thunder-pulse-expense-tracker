@@ -1,55 +1,92 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from datetime import datetime
 import google.generativeai as genai
-from flask_cors import CORS
+import os
+from dotenv import load_dotenv
 
+# ---------------- LOAD ENV ----------------
+load_dotenv()
+
+# ---------------- APP ----------------
 app = Flask(__name__)
 CORS(app)
 
-# 🔑 Configure Gemini API Key
-genai.configure(api_key="AIzaSyCWkoJPlh3RHhhsqkTdmSPjWAQdEEMcxsc")
-
-# ✅ Free-tier friendly model
+# ---------------- GEMINI CONFIG ----------------
+genai.configure(api_key=os.getenv("AIzaSyDk98ikm0rfjqSb69DrUZFrO_Z-TDfmUT0"))
 model = genai.GenerativeModel("models/gemini-flash-lite-latest")
-chat = model.start_chat(history=[])
 
-# Keywords for exiting the chat
-exit_keywords = ["exit", "break", "close"]
+# ---------------- SYSTEM PROMPT ----------------
+SYSTEM_PROMPT = """
+You are an AI Expense Tracker Assistant.
 
-@app.route("/")
-def index():
-    return render_template("index.html")
+You must ONLY help with:
+- Expense tracking
+- Budget planning
+- Saving money
+- Reducing unnecessary expenses
+- Financial discipline
 
+STRICT RULES:
+- Do NOT answer questions unrelated to money, expenses, or budgeting.
+- Do NOT explain why you refuse.
+- Do NOT answer general knowledge, programming, politics, or entertainment.
 
+If the question is unrelated, reply exactly with:
+"I'm designed only to assist with expense tracking and saving money. Please ask a finance-related question."
+"""
+
+# ---------------- HARD KEYWORD FILTER ----------------
+ALLOWED_KEYWORDS = [
+    "expense","expenses","money","budget","save","saving",
+    "spend","spent","spending","income","cost","rent",
+    "food","shopping","emi","loan","bill","electricity",
+    "gas","salary","allowance","balance"
+]
+
+# ---------------- ROUTE ----------------
 @app.route("/chat", methods=["POST"])
-def chat_response():
-    user_message = request.json.get("message", "").strip()
+def chat():
+    data = request.json
 
-    if not user_message:
-        return jsonify({"reply": "Please type a message."})
+    message = data.get("message", "").strip()
+    context = data.get("context", {})
 
-    # Exit keywords
-    if user_message.lower() in exit_keywords:
-        return jsonify({"reply": "Goodbye! 👋 Thanks for chatting with us."})
+    if not message:
+        return jsonify({"reply": "Please enter a message."})
 
-    # Developer info response
-    if "who developed" in user_message.lower() or "who made you" in user_message.lower():
+    # HARD BLOCK (double protection)
+    if not any(word in message.lower() for word in ALLOWED_KEYWORDS):
         return jsonify({
-            "reply": "I was developed by Google and our awesome team THUNDER PLUS!"
+            "reply": "I'm designed only to assist with expense tracking and saving money. Please ask a finance-related question."
         })
 
     try:
-        # Send message to Gemini
-        response = chat.send_message(user_message)
+        chat_session = model.start_chat(history=[
+            {"role": "system", "parts": [SYSTEM_PROMPT]}
+        ])
 
-        # Timestamp
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        reply_with_time = f"[{timestamp}] {response.text}"
+        # Inject real expense data
+        context_prompt = f"""
+User Financial Summary:
+Monthly Allowance: ₹{context.get('allowance')}
+Total Spent This Month: ₹{context.get('spent')}
+Remaining Balance: ₹{context.get('remaining')}
+"""
 
-        return jsonify({"reply": reply_with_time})
+        final_prompt = context_prompt + "\nUser Question: " + message
 
-    except Exception as e:
-        return jsonify({"reply": f"Error: {str(e)}"})
+        response = chat_session.send_message(final_prompt)
+        time = datetime.now().strftime("%H:%M")
+
+        return jsonify({
+            "reply": f"[{time}] {response.text}"
+        })
+
+    except Exception:
+        return jsonify({
+            "reply": "AI service is temporarily unavailable."
+        }), 500
 
 
 if __name__ == "__main__":
