@@ -1,92 +1,55 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Flask, render_template, request, jsonify
 from datetime import datetime
 import google.generativeai as genai
-import os
-from dotenv import load_dotenv
+from flask_cors import CORS
 
-# ---------------- LOAD ENV ----------------
-load_dotenv()
-
-# ---------------- APP ----------------
 app = Flask(__name__)
 CORS(app)
 
-# ---------------- GEMINI CONFIG ----------------
-genai.configure(api_key=os.getenv("AIzaSyDk98ikm0rfjqSb69DrUZFrO_Z-TDfmUT0"))
+# 🔑 Configure Gemini API Key
+genai.configure(api_key="AIzaSyCWkoJPlh3RHhhsqkTdmSPjWAQdEEMcxsc")
+
+# ✅ Free-tier friendly model
 model = genai.GenerativeModel("models/gemini-flash-lite-latest")
+chat = model.start_chat(history=[])
 
-# ---------------- SYSTEM PROMPT ----------------
-SYSTEM_PROMPT = """
-You are an AI Expense Tracker Assistant.
+# Keywords for exiting the chat
+exit_keywords = ["exit", "break", "close"]
 
-You must ONLY help with:
-- Expense tracking
-- Budget planning
-- Saving money
-- Reducing unnecessary expenses
-- Financial discipline
+@app.route("/")
+def index():
+    return render_template("index.html")
 
-STRICT RULES:
-- Do NOT answer questions unrelated to money, expenses, or budgeting.
-- Do NOT explain why you refuse.
-- Do NOT answer general knowledge, programming, politics, or entertainment.
 
-If the question is unrelated, reply exactly with:
-"I'm designed only to assist with expense tracking and saving money. Please ask a finance-related question."
-"""
-
-# ---------------- HARD KEYWORD FILTER ----------------
-ALLOWED_KEYWORDS = [
-    "expense","expenses","money","budget","save","saving",
-    "spend","spent","spending","income","cost","rent",
-    "food","shopping","emi","loan","bill","electricity",
-    "gas","salary","allowance","balance"
-]
-
-# ---------------- ROUTE ----------------
 @app.route("/chat", methods=["POST"])
-def chat():
-    data = request.json
+def chat_response():
+    user_message = request.json.get("message", "").strip()
 
-    message = data.get("message", "").strip()
-    context = data.get("context", {})
+    if not user_message:
+        return jsonify({"reply": "Please type a message."})
 
-    if not message:
-        return jsonify({"reply": "Please enter a message."})
+    # Exit keywords
+    if user_message.lower() in exit_keywords:
+        return jsonify({"reply": "Goodbye! 👋 Thanks for chatting with us."})
 
-    # HARD BLOCK (double protection)
-    if not any(word in message.lower() for word in ALLOWED_KEYWORDS):
+    # Developer info response
+    if "who developed" in user_message.lower() or "who made you" in user_message.lower():
         return jsonify({
-            "reply": "I'm designed only to assist with expense tracking and saving money. Please ask a finance-related question."
+            "reply": "I was developed by Google and our awesome team THUNDER PLUS!"
         })
 
     try:
-        chat_session = model.start_chat(history=[
-            {"role": "system", "parts": [SYSTEM_PROMPT]}
-        ])
+        # Send message to Gemini
+        response = chat.send_message(user_message)
 
-        # Inject real expense data
-        context_prompt = f"""
-User Financial Summary:
-Monthly Allowance: ₹{context.get('allowance')}
-Total Spent This Month: ₹{context.get('spent')}
-Remaining Balance: ₹{context.get('remaining')}
-"""
+        # Timestamp
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        reply_with_time = f"[{timestamp}] {response.text}"
 
-        final_prompt = context_prompt + "\nUser Question: " + message
+        return jsonify({"reply": reply_with_time})
 
-        response = chat_session.send_message(final_prompt)
-        time = datetime.now().strftime("%H:%M")
-
-        return jsonify({
-            "reply": f"[{time}] {response.text}"
-        })
-
-    except Exception:
-        return jsonify({
-            "reply": "AI service is temporarily unavailable."
-        }), 500
+    except Exception as e:
+        return jsonify({"reply": f"Error: {str(e)}"})
 
 
 if __name__ == "__main__":
