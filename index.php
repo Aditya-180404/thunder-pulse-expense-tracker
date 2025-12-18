@@ -1,3 +1,4 @@
+
 <?php
 require('db.php');
 include("auth_session.php");
@@ -386,7 +387,7 @@ canvas{
 
 <!-- Navbar -->
 <nav class="navbar">
-    <h2>Fin Track</h2>
+    <h2>Expense Tracker</h2>
     <div class="nav-links">
         <a href="home.php">Home</a>
         <a href="index.php">Dashboard</a>
@@ -482,7 +483,7 @@ canvas{
 <footer class="footer">
     <div class="footer-content">
         <div class="footer-section">
-            <h4>Fin Track</h4>
+            <h4>Expense Tracker</h4>
             <p>Track your daily expenses, manage budgets, and stay financially organized.</p>
         </div>
 
@@ -547,16 +548,55 @@ document.getElementById('allowance-type').addEventListener('change', function(){
 });
 
 // AI Chat
+
 function sendMessage(){
-    const input=document.getElementById("ai-input");
-    const chatBox=document.getElementById("chat-box");
-    const message=input.value.trim();
-    if(message==="") return;
-    const userDiv=document.createElement("div"); userDiv.style.textAlign="right"; userDiv.style.margin="5px 0";
-    userDiv.innerHTML=`<strong>You:</strong> ${message}`; chatBox.appendChild(userDiv); chatBox.scrollTop=chatBox.scrollHeight;
-    input.value="";
+    const input = document.getElementById("ai-input");
+    const chatBox = document.getElementById("chat-box");
+    const message = input.value.trim();
+
+    if(message === "") return;
+
+    chatBox.innerHTML += `
+        <div style="text-align:right;margin:6px 0;">
+            <strong>You:</strong> ${message}
+        </div>
+    `;
+    chatBox.scrollTop = chatBox.scrollHeight;
+    input.value = "";
+
+    const context = {
+        allowance: <?php echo (float)$allowance; ?>,
+        spent: <?php echo (float)$total_spent; ?>,
+        remaining: <?php echo (float)$remaining_balance; ?>
+    };
+
+    fetch("http://127.0.0.1:5000/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            message: message,
+            context: context
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        chatBox.innerHTML += `
+            <div style="margin:6px 0;">
+                <strong>AI:</strong> ${data.reply}
+            </div>
+        `;
+        chatBox.scrollTop = chatBox.scrollHeight;
+    })
+    .catch(() => {
+        chatBox.innerHTML += `
+            <div style="color:red;">
+                AI service unavailable.
+            </div>
+        `;
+    });
 }
 </script>
+
 
 </body>
 </html>
